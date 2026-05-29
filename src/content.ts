@@ -1,15 +1,8 @@
 import { FEED_TIMEOUT_MS } from './config';
 
-// Waits for Reddit's JS-rendered feed to populate the DOM.
-// Returns false if nothing appears within the timeout.
-function waitForFeed(timeout = FEED_TIMEOUT_MS): Promise<boolean> {
+function waitForSelector(selector: string, timeout: number): Promise<boolean> {
   return new Promise((resolve) => {
-    const check = (): boolean => {
-      return (
-        document.querySelectorAll('shreddit-post').length > 0 ||
-        document.querySelectorAll('.thing.link').length > 0
-      );
-    };
+    const check = (): boolean => document.querySelectorAll(selector).length > 0;
 
     if (check()) {
       resolve(true);
@@ -29,6 +22,19 @@ function waitForFeed(timeout = FEED_TIMEOUT_MS): Promise<boolean> {
       resolve(check());
     }, timeout);
   });
+}
+
+// Stage 1: wait for post shells — reliable early indicator of page load.
+// Background tabs may throttle Lit's action bar rendering, so we separate
+// the page-load check (shreddit-post) from the button-render check.
+function waitForFeed(timeout = FEED_TIMEOUT_MS): Promise<boolean> {
+  return waitForSelector('shreddit-post, .thing.link', timeout);
+}
+
+// Stage 2: after posts appear, give the action bar a chance to render.
+// Resolving false is non-fatal — getFirstValidPost handles missing buttons.
+function waitForActionBar(timeout = 8000): Promise<boolean> {
+  return waitForSelector(UPVOTE_SEL + ', .thing.link .arrow.up', timeout);
 }
 
 function isLoginPage(): boolean {
@@ -66,37 +72,11 @@ function isStickied(post: Element): boolean {
   return false;
 }
 
-// Finds upvote button using multiple strategies to handle Reddit's
-// obfuscated class names and shadow DOM web components.
-function findUpvoteButton(post: Element): HTMLElement | null {
-  // Strategy 1: aria-label (most reliable on new Reddit)
-  const ariaBtn = post.querySelector<HTMLElement>(
-    'button[aria-label*="upvote" i], button[aria-label*="Upvote" i]'
-  );
-  if (ariaBtn) return ariaBtn;
-
-  // Strategy 2: shadow DOM inside shreddit-post
-  const shadowHost = post.shadowRoot ? post : post.querySelector('shreddit-post');
-  if (shadowHost?.shadowRoot) {
-    const shadowBtn = shadowHost.shadowRoot.querySelector<HTMLElement>(
-      'button[aria-label*="upvote" i]'
-    );
-    if (shadowBtn) return shadowBtn;
-  }
-
-  // Strategy 3: faceplate-button custom elements
-  for (const fb of post.querySelectorAll('faceplate-button')) {
-    const btn = fb.querySelector<HTMLElement>('button[aria-label*="upvote" i]');
-    if (btn) return btn;
-    if (fb.shadowRoot) {
-      const shadowBtn = fb.shadowRoot.querySelector<HTMLElement>('button[aria-label*="upvote" i]');
-      if (shadowBtn) return shadowBtn;
-    }
-  }
-
-  // Strategy 4: legacy Reddit (.arrow.up class)
-  return post.querySelector<HTMLElement>('.arrow.up');
-}
+// Upvote buttons on new Reddit are NOT always inside <shreddit-post> —
+// they may be rendered in adjacent divs by the parent Lit component.
+// Primary selectors target Reddit's stable data attributes rather than
+// aria-label, which is absent on the current shreddit layout.
+const UPVOTE_SEL = 'button[data-action-bar-action="upvote"], button[upvote]';
 
 function isAlreadyUpvoted(button: HTMLElement): boolean {
   if (button.getAttribute('aria-pressed') === 'true') return true;
@@ -114,24 +94,31 @@ function getPostTitle(post: Element): string {
   return el?.textContent?.trim() ?? 'Unknown';
 }
 
-// Finds first non-stickied post across both Reddit layouts
+// Finds first non-stickied post across both Reddit layouts.
+//
+// New Reddit: upvote buttons are searched document-wide (they are NOT
+// always inside the <shreddit-post> element — Reddit renders them in
+// adjacent divs via the parent Lit component). We use closest() to
+// walk up to the associated shreddit-post for stickied detection.
+//
+// Legacy Reddit: buttons are inside .thing.link containers.
 function getFirstValidPost(): PostInfo | null {
-  // New Reddit web components
-  for (const post of document.querySelectorAll('shreddit-post')) {
-    if (isStickied(post)) continue;
-    const upvoteButton = findUpvoteButton(post);
+  // New Reddit — find upvote buttons directly in the document
+  for (const btn of document.querySelectorAll<HTMLElement>(UPVOTE_SEL)) {
+    const post = btn.closest<Element>('shreddit-post');
+    if (post && isStickied(post)) continue;
     return {
-      element: post,
-      title: getPostTitle(post),
-      upvoteButton,
-      isUpvoted: upvoteButton ? isAlreadyUpvoted(upvoteButton) : false,
+      element: post ?? btn,
+      title: post ? getPostTitle(post) : 'Unknown',
+      upvoteButton: btn,
+      isUpvoted: isAlreadyUpvoted(btn),
     };
   }
 
-  // Legacy Reddit
+  // Legacy Reddit — buttons live inside .thing.link
   for (const post of document.querySelectorAll('.thing.link')) {
     if (isStickied(post)) continue;
-    const upvoteButton = findUpvoteButton(post);
+    const upvoteButton = post.querySelector<HTMLElement>('.arrow.up');
     return {
       element: post,
       title: getPostTitle(post),
@@ -164,6 +151,8 @@ async function run(): Promise<void> {
       chrome.runtime.sendMessage({ type: 'USE_FALLBACK', reason: 'page_load_timeout' });
       return;
     }
+
+    await waitForActionBar();
 
     const post = getFirstValidPost();
     if (!post) {
