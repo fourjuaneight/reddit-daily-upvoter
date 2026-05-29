@@ -1,5 +1,6 @@
-import { getConfig, saveConfig } from './storage';
-import { Config } from './types';
+import { LOG_FILENAME } from './config';
+import { getConfig, saveConfig, getLog } from './storage';
+import { Config, LogEntry } from './types';
 
 const SUBREDDIT_REGEX = /^[a-zA-Z0-9_]{3,21}$/;
 
@@ -83,6 +84,28 @@ $('saveBtn').addEventListener('click', async () => {
   });
 
   showStatus('Saved!');
+});
+
+function formatLogLine(entry: LogEntry): string {
+  const ts = new Date(entry.timestamp).toISOString();
+  const parts = [`[${ts}]`, entry.result.toUpperCase(), `r/${entry.subreddit}`];
+  if (entry.fallbackReason) parts.push(`(reason: ${entry.fallbackReason})`);
+  if (entry.postTitle) parts.push(`"${entry.postTitle}"`);
+  if (entry.error) parts.push(`ERROR: ${entry.error}`);
+  return parts.join(' | ');
+}
+
+$('exportBtn').addEventListener('click', async () => {
+  const log = await getLog();
+  if (log.length === 0) {
+    $('exportStatus').textContent = 'No log entries yet.';
+    return;
+  }
+  const text = log.map(formatLogLine).join('\n');
+  const url = `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`;
+  chrome.downloads.download({ url, filename: LOG_FILENAME, saveAs: true });
+  $('exportStatus').textContent = `Exported ${log.length} entries.`;
+  setTimeout(() => { $('exportStatus').textContent = ''; }, 3000);
 });
 
 document.addEventListener('DOMContentLoaded', loadSettings);

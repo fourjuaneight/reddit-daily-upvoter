@@ -1,3 +1,4 @@
+import { LOG_FILENAME } from './config';
 import { getConfig, getLog } from './storage';
 
 function $(id: string): HTMLElement {
@@ -57,7 +58,7 @@ $('exportBtn').addEventListener('click', async () => {
   const url = URL.createObjectURL(blob);
   await chrome.downloads.download({
     url,
-    filename: 'reddit-upvoter-log.txt',
+    filename: LOG_FILENAME,
     conflictAction: 'overwrite',
     saveAs: true,
   });

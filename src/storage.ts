@@ -1,5 +1,4 @@
 import { Config, LogEntry, DEFAULT_CONFIG, MAX_LOG_ENTRIES } from './types';
-import { LOG_FILENAME } from './config';
 
 export async function getConfig(): Promise<Config> {
   const result = await chrome.storage.local.get('config');
@@ -22,9 +21,6 @@ export async function addLogEntry(entry: LogEntry): Promise<void> {
     log.length = MAX_LOG_ENTRIES;
   }
   await chrome.storage.local.set({ log });
-
-  // Append to persistent log file via downloads API
-  appendToLogFile(entry);
 }
 
 export async function hasUpvotedToday(): Promise<boolean> {
@@ -34,33 +30,3 @@ export async function hasUpvotedToday(): Promise<boolean> {
   return log[0].date === today && log[0].result === 'success';
 }
 
-// Downloads API appends a line to a text file in the user's Downloads folder.
-// Chrome overwrites same-name files by default, so we fetch existing content
-// from storage and re-download the full log each time.
-function appendToLogFile(entry: LogEntry): void {
-  const line = formatLogLine(entry);
-
-  chrome.storage.local.get('logFileContent', (result) => {
-    const existing: string = result.logFileContent ?? '';
-    const updated = existing + line + '\n';
-    chrome.storage.local.set({ logFileContent: updated }, () => {
-      // Service workers lack URL.createObjectURL — use a data: URL instead
-      const url = `data:text/plain;charset=utf-8,${encodeURIComponent(updated)}`;
-      chrome.downloads.download({
-        url,
-        filename: LOG_FILENAME,
-        conflictAction: 'overwrite',
-        saveAs: false,
-      });
-    });
-  });
-}
-
-function formatLogLine(entry: LogEntry): string {
-  const ts = new Date(entry.timestamp).toISOString();
-  const parts = [`[${ts}]`, entry.result.toUpperCase(), `r/${entry.subreddit}`];
-  if (entry.fallbackReason) parts.push(`(reason: ${entry.fallbackReason})`);
-  if (entry.postTitle) parts.push(`"${entry.postTitle}"`);
-  if (entry.error) parts.push(`ERROR: ${entry.error}`);
-  return parts.join(' | ');
-}
