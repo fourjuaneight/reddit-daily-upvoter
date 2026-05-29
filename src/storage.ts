@@ -59,7 +59,7 @@ function appendToLogFile(entry: LogEntry): void {
 function formatLogLine(entry: LogEntry): string {
   const ts = new Date(entry.timestamp).toISOString();
   const parts = [`[${ts}]`, entry.result.toUpperCase(), `r/${entry.subreddit}`];
-  if (entry.usedFallback) parts.push(`(fallback: ${entry.fallbackReason})`);
+  if (entry.fallbackReason) parts.push(`(reason: ${entry.fallbackReason})`);
   if (entry.postTitle) parts.push(`"${entry.postTitle}"`);
   if (entry.error) parts.push(`ERROR: ${entry.error}`);
   return parts.join(' | ');
