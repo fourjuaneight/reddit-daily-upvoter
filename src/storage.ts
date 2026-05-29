@@ -44,17 +44,14 @@ function appendToLogFile(entry: LogEntry): void {
     const existing: string = result.logFileContent ?? '';
     const updated = existing + line + '\n';
     chrome.storage.local.set({ logFileContent: updated }, () => {
-      const blob = new Blob([updated], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      chrome.downloads.download(
-        {
-          url,
-          filename: LOG_FILENAME,
-          conflictAction: 'overwrite',
-          saveAs: false,
-        },
-        () => URL.revokeObjectURL(url)
-      );
+      // Service workers lack URL.createObjectURL — use a data: URL instead
+      const url = `data:text/plain;charset=utf-8,${encodeURIComponent(updated)}`;
+      chrome.downloads.download({
+        url,
+        filename: LOG_FILENAME,
+        conflictAction: 'overwrite',
+        saveAs: false,
+      });
     });
   });
 }
