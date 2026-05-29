@@ -103,7 +103,17 @@ async function handleMessage(
       if (tabId) await chrome.tabs.remove(tabId);
 
       if (!task.isFallback) {
-        // Primary failed — try fallback subreddit
+        // Log primary failure before trying fallback
+        await addLogEntry({
+          date: today,
+          timestamp: Date.now(),
+          subreddit: task.subreddit,
+          usedFallback: false,
+          fallbackReason: message.reason,
+          result: 'no_posts',
+          postTitle: null,
+          error: null,
+        });
         await openUpvoteTab(config.fallbackSubreddit, true);
       } else {
         // Both primary and fallback failed
