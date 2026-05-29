@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Reddit Daily Upvoter",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Automatically upvotes the first post of a target subreddit once per day.",
   "permissions": [
     "alarms",
